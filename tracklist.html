@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Newton's Jukebox</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background: #f5f5f5;
+    padding: 24px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 2rem;
+    margin-bottom: 28px;
+    color: #1a1a1a;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  .card {
+    background: white;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .number {
+    background: #1DB954;
+    color: white;
+    font-size: 1.5rem;
+    font-weight: 700;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .card img {
+    width: 148px;
+    height: 148px;
+    object-fit: cover;
+    border-radius: 6px;
+  }
+
+  .no-art {
+    width: 148px;
+    height: 148px;
+    background: #eee;
+    border-radius: 6px;
+  }
+
+  .title {
+    font-size: 0.85rem;
+    color: #333;
+    line-height: 1.4;
+  }
+
+  .controls {
+    text-align: center;
+    margin: 0 auto 28px;
+    max-width: 1000px;
+    padding: 12px 20px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    font-size: 0.95rem;
+    color: #555;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .controls strong {
+    color: #1DB954;
+    font-size: 1rem;
+  }
+
+  @media print {
+    body { background: white; padding: 8px; }
+    .card { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
+    .controls { box-shadow: none; border: 1px solid #ddd; }
+  }
+</style>
+</head>
+<body>
+<h1>Newton's Jukebox</h1>
+<div class="controls"><span><strong>P</strong> = Pause</span>  <span><strong>G</strong> = Play</span>  <span><strong>N</strong> = Next</span>  <span><strong>B</strong> = Begin</span></div>
+<div class="grid">
+    <div class="card">
+      <div class="number">1</div>
+      <img src="trackart/BensonBoone.png" alt="Benson Boone: American Heart">
+      <div class="title">Benson Boone: American Heart</div>
+    </div>
+    <div class="card">
+      <div class="number">2</div>
+      <img src="trackart/TheBeatles.png" alt="The Beatles">
+      <div class="title">The Beatles</div>
+    </div>
+    <div class="card">
+      <div class="number">3</div>
+      <img src="trackart/FredAgain.png" alt="Fred Again: Ten Days">
+      <div class="title">Fred Again: Ten Days</div>
+    </div>
+    <div class="card">
+      <div class="number">4</div>
+      <img src="trackart/GeorgeEzra.png" alt="George Ezra: Staying at Tamara's">
+      <div class="title">George Ezra: Staying at Tamara's</div>
+    </div>
+    <div class="card">
+      <div class="number">5</div>
+      <img src="trackart/Avicii.png" alt="Avicii: True">
+      <div class="title">Avicii: True</div>
+    </div>
+    <div class="card">
+      <div class="number">6</div>
+      <img src="trackart/OfMonstersAndMen.png" alt="Of Monsters and Men: My Head Is an Animal">
+      <div class="title">Of Monsters and Men: My Head Is an Animal</div>
+    </div>
+    <div class="card">
+      <div class="number">7</div>
+      <img src="trackart/NewtonFaulkner.png" alt="Newton Faulkner: Hand Built By Robots">
+      <div class="title">Newton Faulkner: Hand Built By Robots</div>
+    </div>
+    <div class="card">
+      <div class="number">8</div>
+      <img src="trackart/NathanEvans.png" alt="Nathan Evans: Wellerman">
+      <div class="title">Nathan Evans: Wellerman</div>
+    </div>
+    <div class="card">
+      <div class="number">9</div>
+      <img src="trackart/SnowPatrol.png" alt="Snow Patrol: Final Straw">
+      <div class="title">Snow Patrol: Final Straw</div>
+    </div>
+    <div class="card">
+      <div class="number">99</div>
+      <img src="trackart/Newton.png" alt="Newton the Best Presents">
+      <div class="title">Newton the Best Presents</div>
+    </div>
+</div>
+</body>
+</html>

@@ -5,5 +5,30 @@
   "announcement_volume": 30,
   "multi_digit_timeout": 2.0,
   "keyboard_device_name": "HID 04f3:0103",
-  "keyboard_device_path": null
+  "keyboard_device_path": null,
+  "announce_template": "{number}. {title}",
+  "unmapped_responses": [
+    "Ouch",
+    "Are you sure?",
+    "Really?",
+    "Hmm, I don't understand",
+    "Unexpected item in the bagging area",
+    "Are you yanking my chain?",
+    "That's not a number I recognise",
+    "Nice try",
+    "Did you sneeze on the keyboard?",
+    "Error 404, music not found",
+    "I'm going to pretend that didn't happen",
+    "Was that intentional?",
+    "Try pressing a number",
+    "I have absolutely no idea what you just pressed",
+    "Please consult the manual",
+    "please type in the 987th prime to continue"
+  ],
+  "key_bindings": {
+    "KEY_P": { "action": "PAUSE",  "speech": "Paused" },
+    "KEY_G": { "action": "PLAY",   "speech": "Playing" },
+    "KEY_N": { "action": "NEXT",   "speech": "Next" },
+    "KEY_B": { "action": "BEGIN",  "speech": "Starting over" }
+  }
 }

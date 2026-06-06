@@ -3,6 +3,7 @@ from evdev import InputDevice, categorize, ecodes
 import time
 import json
 import os
+import random
 from pathlib import Path
 import soco
 from soco.music_services import MusicService
@@ -81,12 +82,24 @@ def connect_sonos_with_retry(ip_address, retry_interval=60):
         print(f"[Sonos] No Sonos found. Retrying in {retry_interval} seconds...")
         time.sleep(retry_interval)
 
+def speak_local(text):
+    """Short spoken confirmation through the Pi's local audio using espeak.
+    Used for control key feedback so Sonos playback state is not interrupted."""
+    print(f"[TTS] {text}")
+    try:
+        import subprocess
+        subprocess.run(['espeak', text], timeout=5, capture_output=True)
+    except FileNotFoundError:
+        pass  # espeak not installed — log line above is enough
+    except Exception as e:
+        print(f"[WARNING] Local TTS failed: {e}")
+
 def announce_selection(device, number, title):
-    """Announce the selection using text-to-speech through Sonos"""
+    """Announce the track selection through Sonos before music starts."""
     if not config['announce_selections']:
         return
 
-    message = f"You have selected number {number}. {title}"
+    message = config.get('announce_template', '{number}. {title}').format(number=number, title=title)
     print(f"[DEBUG] Announcing: '{message}'")
 
     original_volume = device.volume
@@ -226,8 +239,7 @@ def play_music(number):
     print(f"[DEBUG] Available mappings: {list(music_map.keys())}")
     
     if number_str not in music_map:
-        print(f"[DEBUG] Number {number} not found in music_map")
-        print(f"Number {number} not mapped to any music")
+        print(f"[INPUT] Number {number} → null (not in music_mappings.json)")
         return
     
     mapping = music_map[number_str]
@@ -237,14 +249,7 @@ def play_music(number):
     print(f"[DEBUG] Found mapping - Title: '{title}', URI: '{uri}'")
     
     try:
-        # Announce selection before playing
-        print(f"[DEBUG] Announcing selection...")
         announce_selection(sonos_device, number, title)
-        
-        # Small delay to let announcement finish
-        if config['announce_selections']:
-            time.sleep(0.5)
-        
         print(f"[DEBUG] Attempting to play on Sonos...")
         success = play_spotify_on_sonos(sonos_device, uri, title)
         
@@ -363,96 +368,114 @@ def main():
     # Buffer for multi-digit input
     input_buffer = []
     last_keypress_time = 0
-    
+
+    key_map = {
+        ecodes.KEY_KP0: '0', ecodes.KEY_0: '0',
+        ecodes.KEY_KP1: '1', ecodes.KEY_1: '1',
+        ecodes.KEY_KP2: '2', ecodes.KEY_2: '2',
+        ecodes.KEY_KP3: '3', ecodes.KEY_3: '3',
+        ecodes.KEY_KP4: '4', ecodes.KEY_4: '4',
+        ecodes.KEY_KP5: '5', ecodes.KEY_5: '5',
+        ecodes.KEY_KP6: '6', ecodes.KEY_6: '6',
+        ecodes.KEY_KP7: '7', ecodes.KEY_7: '7',
+        ecodes.KEY_KP8: '8', ecodes.KEY_8: '8',
+        ecodes.KEY_KP9: '9', ecodes.KEY_9: '9',
+        ecodes.KEY_KPENTER: 'ENTER', ecodes.KEY_ENTER: 'ENTER',
+    }
+
+    speech_map = {}
+    for key_name, binding in config.get('key_bindings', {}).items():
+        code = getattr(ecodes, key_name, None)
+        if code is None:
+            print(f"[WARNING] Unknown key name in config key_bindings: '{key_name}'")
+            continue
+        action = binding['action']
+        key_map[code] = action
+        if binding.get('speech'):
+            speech_map[action] = binding['speech']
+
     # Listen for keypad input
     for event in keypad.read_loop():
         current_time = time.time()
-        
-        # Check if we should process the buffered input (timeout expired)
+
+        # Flush buffer when timeout expires between keypresses
         if input_buffer and (current_time - last_keypress_time > config['multi_digit_timeout']):
             number = parse_number_input(input_buffer)
-            if number is not None:
-                play_music(number)
+            print(f"[INPUT] Timeout → number: {number}")
+            play_music(number)
             input_buffer = []
-        
+
         if event.type == ecodes.EV_KEY:
             key_event = categorize(event)
-            
+
             if key_event.keystate == 1:  # Key down event
-                # Map keypad numbers to actual numbers
-                key_map = {
-                    ecodes.KEY_KP0: '0', ecodes.KEY_0: '0',
-                    ecodes.KEY_KP1: '1', ecodes.KEY_1: '1',
-                    ecodes.KEY_KP2: '2', ecodes.KEY_2: '2',
-                    ecodes.KEY_KP3: '3', ecodes.KEY_3: '3',
-                    ecodes.KEY_KP4: '4', ecodes.KEY_4: '4',
-                    ecodes.KEY_KP5: '5', ecodes.KEY_5: '5',
-                    ecodes.KEY_KP6: '6', ecodes.KEY_6: '6',
-                    ecodes.KEY_KP7: '7', ecodes.KEY_7: '7',
-                    ecodes.KEY_KP8: '8', ecodes.KEY_8: '8',
-                    ecodes.KEY_KP9: '9', ecodes.KEY_9: '9',
-                    ecodes.KEY_KPENTER: 'ENTER', ecodes.KEY_ENTER: 'ENTER',
-                    ecodes.KEY_P: 'PAUSE',
-                    ecodes.KEY_G: 'PLAY',
-                    ecodes.KEY_N: 'NEXT',
-                    ecodes.KEY_B: 'BEGIN',
-                }
-                
-                if event.code in key_map:
-                    key = key_map[event.code]
-                    
-                    # Handle special control keys
-                    if key == 'PAUSE':
-                        print("[CONTROL] Pausing playback...")
-                        try:
-                            sonos_device.pause()
-                            print("✓ Playback paused")
-                        except Exception as e:
-                            print(f"✗ Error pausing: {e}")
-                        continue
-                    
-                    elif key == 'PLAY':
-                        print("[CONTROL] Resuming playback...")
-                        try:
-                            sonos_device.play()
-                            print("✓ Playback resumed")
-                        except Exception as e:
-                            print(f"✗ Error resuming: {e}")
-                        continue
-                    
-                    elif key == 'NEXT':
-                        print("[CONTROL] Skipping to next track...")
-                        try:
-                            sonos_device.next()
-                            # Get the new track info to display
-                            time.sleep(0.5)  # Brief delay for track info to update
-                            track_info = sonos_device.get_current_track_info()
-                            print(f"✓ Now playing: {track_info.get('title', 'Unknown')}")
-                        except Exception as e:
-                            print(f"✗ Error skipping track: {e}")
-                        continue
-                    
-                    elif key == 'BEGIN':
-                        print("[CONTROL] Restarting current track...")
-                        try:
-                            sonos_device.seek('00:00:00')
-                            print("✓ Track restarted from beginning")
-                        except Exception as e:
-                            print(f"✗ Error restarting track: {e}")
-                        continue
-                    
-                    # Handle Enter key as immediate trigger
-                    elif key == 'ENTER':
-                        if input_buffer:
-                            number = parse_number_input(input_buffer)
-                            if number is not None:
-                                play_music(number)
-                            input_buffer = []
+                if event.code not in key_map:
+                    responses = config.get('unmapped_responses', [])
+                    if responses:
+                        msg = random.choice(responses)
+                        print(f"[INPUT] Unmapped key (code: {event.code}) → '{msg}'")
+                        speak_local(msg)
                     else:
-                        # Add digit to buffer
-                        input_buffer.append(key)
-                        last_keypress_time = current_time
-                        print(f"Input: {''.join(input_buffer)}")
+                        print(f"[INPUT] Unmapped key (code: {event.code}) → null")
+                    continue
+
+                key = key_map[event.code]
+
+                if key == 'PAUSE':
+                    print("[INPUT] PAUSE pressed")
+                    try:
+                        sonos_device.pause()
+                        if speech_map.get('PAUSE'):
+                            speak_local(speech_map['PAUSE'])
+                        print("✓ Playback paused")
+                    except Exception as e:
+                        print(f"✗ Error pausing: {e}")
+
+                elif key == 'PLAY':
+                    print("[INPUT] PLAY pressed")
+                    try:
+                        if speech_map.get('PLAY'):
+                            speak_local(speech_map['PLAY'])
+                        sonos_device.play()
+                        print("✓ Playback resumed")
+                    except Exception as e:
+                        print(f"✗ Error resuming: {e}")
+
+                elif key == 'NEXT':
+                    print("[INPUT] NEXT pressed")
+                    try:
+                        if speech_map.get('NEXT'):
+                            speak_local(speech_map['NEXT'])
+                        sonos_device.next()
+                        time.sleep(0.5)
+                        track_info = sonos_device.get_current_track_info()
+                        print(f"✓ Now playing: {track_info.get('title', 'Unknown')}")
+                    except Exception as e:
+                        print(f"✗ Error skipping track: {e}")
+
+                elif key == 'BEGIN':
+                    print("[INPUT] BEGIN pressed")
+                    try:
+                        if speech_map.get('BEGIN'):
+                            speak_local(speech_map['BEGIN'])
+                        sonos_device.seek('00:00:00')
+                        print("✓ Track restarted from beginning")
+                    except Exception as e:
+                        print(f"✗ Error restarting track: {e}")
+
+                elif key == 'ENTER':
+                    if input_buffer:
+                        number = parse_number_input(input_buffer)
+                        print(f"[INPUT] Enter → number: {number}")
+                        play_music(number)
+                        input_buffer = []
+                    else:
+                        print("[INPUT] Enter pressed → null (buffer empty)")
+
+                else:
+                    input_buffer.append(key)
+                    last_keypress_time = current_time
+                    print(f"[INPUT] Key: {key} → buffer: {''.join(input_buffer)}")
 
 if __name__ == "__main__":
     try:
