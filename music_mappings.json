@@ -1,0 +1,52 @@
+{
+  "1": {
+    "title": "Benson Boone: American Heart",
+    "uri": "spotify:album:3C0QJ1R0T3xX0BUbOZcdCw?si=-qDI-zPXRDaBqr308nTmZQ",
+    "filename": "BensonBoone.png"
+  },
+  "2": {
+    "title": "The Beatles",
+    "uri": "spotify:album:7vEJAtP3KgKSpOHVgwm3Eh?si=I8PSjgafSBuONjdsJhBfzQ",
+    "filename": "TheBeatles.png"
+  },
+  "3": {
+    "title": "Fred Again: Ten Days",
+    "uri": "spotify:album:3DQueEd1Ft9PHWgovDzPKh?si=bQCCNHOQRWad627bEmlSvw",
+    "filename": "FredAgain.png"
+  },
+  "4": {
+    "title": "George Ezra: Staying at Tamara's",
+    "uri": "spotify:album:2NaulYO6lGXTyIzWTJvRJj?si=XD9otdyNTmi4aSYeejrbZA",
+    "filename": "GeorgeEzra.png"
+  },
+  "5": {
+    "title": "Avicii: True",
+    "uri": "spotify:album:2H6i2CrWgXE1HookLu8Au0?si=0Nhm3XVhQUyuJLSfXOX2Rw",
+    "filename": "Avicii.png"
+  },
+  "6": {
+    "title": "Of Monsters and Men: My Head Is an Animal",
+    "uri": "spotify:album:4p9dVvZDaZliSjTCbFRhJy?si=6tSBfjwEQ76bvDCDoZpoYw",
+    "filename": "OfMonstersAndMen.png"
+  },
+  "7": {
+    "title": "Newton Faulkner: Hand Built By Robots",
+    "uri": "spotify:album:3sa5wY7P025oIRRDvolUY5?si=05an3-KfQ0SawyB9ZxEHsw",
+    "filename": "NewtonFaulkner.png"
+  },
+  "8": {
+    "title": "Nathan Evans: Wellerman",
+    "uri": "spotify:album:58ERFMzxMJbnclKR2qcUc8?si=seO9lreaQ36_evQavxyIRw",
+    "filename": "NathanEvans.png"
+  },
+  "9": {
+    "title": "Snow Patrol: Final Straw",
+    "uri": "spotify:album:6rnHGj9PUHcEQCp4xdjbeJ?si=g31qT3VkQ-OUyQXxKbq7AA",
+    "filename": "SnowPatrol.png"
+  },
+  "99": {
+    "title": "Newton the Best Presents",
+    "uri": "spotify:playlist:5oKMu0hQJZDS8UonvbTktq?si=rL8BBZkEQZauMXQjyn7dag",
+    "filename": "Newton.png"
+  }
+}

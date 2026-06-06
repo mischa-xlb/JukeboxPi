@@ -1,0 +1,11 @@
+{
+  "spotify": {
+    "client_id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+    "client_secret": "z9y8x7w6v5u4t3s2r1q0p9o8n7m6l5k4",
+    "redirect_uri": "http://127.0.0.1:8888/callback"
+  },
+  "sonos_room_name": "Den",
+  "announce_selections": true,
+  "multi_digit_timeout": 2.0,
+  "keyboard_device_path": "/dev/input/event2"
+}
