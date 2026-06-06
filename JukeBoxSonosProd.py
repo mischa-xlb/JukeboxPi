@@ -82,30 +82,12 @@ def connect_sonos_with_retry(ip_address, retry_interval=60):
         print(f"[Sonos] No Sonos found. Retrying in {retry_interval} seconds...")
         time.sleep(retry_interval)
 
-def speak_local(text):
-    """Short spoken confirmation through the Pi's local audio using espeak.
-    Used for control key feedback so Sonos playback state is not interrupted."""
-    print(f"[TTS] {text}")
-    try:
-        import subprocess
-        subprocess.run(['espeak', text], timeout=5, capture_output=True)
-    except FileNotFoundError:
-        pass  # espeak not installed — log line above is enough
-    except Exception as e:
-        print(f"[WARNING] Local TTS failed: {e}")
-
-def announce_selection(device, number, title):
-    """Announce the track selection through Sonos before music starts."""
-    if not config['announce_selections']:
-        return
-
-    message = config.get('announce_template', '{number}. {title}').format(number=number, title=title)
-    print(f"[DEBUG] Announcing: '{message}'")
-
+def speak_sonos(device, text):
+    """Play a TTS message through the Sonos speaker."""
+    print(f"[TTS] '{text}'")
     original_volume = device.volume
     tmp_path = None
     httpd = None
-
     try:
         from gtts import gTTS
         import tempfile
@@ -113,24 +95,19 @@ def announce_selection(device, number, title):
         import http.server
         import socket
 
-        # Generate the TTS MP3
-        tts = gTTS(text=message, lang='en', slow=False)
+        tts = gTTS(text=text, lang='en', slow=False)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
         tts.save(tmp.name)
         tmp.close()
         tmp_path = tmp.name
-        print(f"[DEBUG] TTS saved to {tmp_path}")
 
-        # Determine this Pi's IP address so Sonos can reach it
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.connect(('8.8.8.8', 80))
         local_ip = sock.getsockname()[0]
         sock.close()
 
-        # Serve the MP3 over HTTP — Sonos cannot access file:// paths
         serve_dir = os.path.dirname(tmp_path)
         filename = os.path.basename(tmp_path)
-        port = 8765
 
         class SilentHandler(http.server.SimpleHTTPRequestHandler):
             def __init__(self, *args, **kwargs):
@@ -138,41 +115,38 @@ def announce_selection(device, number, title):
             def log_message(self, *_):
                 pass
 
-        httpd = http.server.HTTPServer(('', port), SilentHandler)
+        httpd = http.server.HTTPServer(('', 8765), SilentHandler)
         t = threading.Thread(target=httpd.serve_forever)
         t.daemon = True
         t.start()
 
-        url = f"http://{local_ip}:{port}/{filename}"
-        print(f"[DEBUG] Serving TTS at {url}")
-
         if config.get('announcement_volume'):
             device.volume = config['announcement_volume']
-            print(f"[DEBUG] Announcement volume: {config['announcement_volume']}")
 
-        device.play_uri(url)
+        device.play_uri(f"http://{local_ip}:8765/{filename}")
 
-        # Poll every 0.25s so we start music as soon as TTS finishes
-        time.sleep(0.5)  # give Sonos a moment to begin playing
-        for _ in range(240):  # max 60s
-            state = device.get_current_transport_info()['current_transport_state']
-            if state != 'PLAYING':
+        time.sleep(0.5)
+        for _ in range(240):
+            if device.get_current_transport_info()['current_transport_state'] != 'PLAYING':
                 break
             time.sleep(0.25)
-
-        print("[DEBUG] Announcement complete")
 
     except ImportError:
         print("[WARNING] gTTS not installed: pip install gTTS")
     except Exception as e:
-        print(f"[WARNING] Announcement failed: {e}")
+        print(f"[WARNING] TTS failed: {e}")
     finally:
         device.volume = original_volume
-        # Shut down HTTP server in background so it doesn't delay music starting
         if httpd:
             threading.Thread(target=httpd.shutdown, daemon=True).start()
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+def announce_selection(device, number, title):
+    if not config['announce_selections']:
+        return
+    message = config.get('announce_template', '{number}. {title}').format(number=number, title=title)
+    speak_sonos(device, message)
 
 def play_spotify_on_sonos(device, spotify_uri, title):
     """Play a Spotify URI on Sonos using SoCo sharelink method"""
@@ -342,6 +316,15 @@ def main():
     
     print("=" * 60)
     print("SONOS JUKEBOX (SoCo Library)")
+    try:
+        import subprocess
+        commit = subprocess.check_output(
+            ['git', 'log', '-1', '--format=%h %cd', '--date=format:%Y-%m-%d %H:%M:%S'],
+            cwd=Path(__file__).parent, text=True
+        ).strip()
+        print(f"Version: {commit}")
+    except Exception:
+        print("Version: unknown (git not available)")
     print("=" * 60)
     
     # Connect to Sonos (retries every 60s until successful)
@@ -420,7 +403,7 @@ def main():
                     if responses and (current_time - last_unmapped_time >= cooldown):
                         msg = random.choice(responses)
                         print(f"[INPUT] Unmapped key (code: {event.code}) → '{msg}'")
-                        speak_local(msg)
+                        speak_sonos(sonos_device,msg)
                         last_unmapped_time = current_time
                     else:
                         print(f"[INPUT] Unmapped key (code: {event.code}) → null (cooldown)")
@@ -433,7 +416,7 @@ def main():
                     try:
                         sonos_device.pause()
                         if speech_map.get('PAUSE'):
-                            speak_local(speech_map['PAUSE'])
+                            speak_sonos(sonos_device,speech_map['PAUSE'])
                         print("✓ Playback paused")
                     except Exception as e:
                         print(f"✗ Error pausing: {e}")
@@ -442,7 +425,7 @@ def main():
                     print("[INPUT] PLAY pressed")
                     try:
                         if speech_map.get('PLAY'):
-                            speak_local(speech_map['PLAY'])
+                            speak_sonos(sonos_device,speech_map['PLAY'])
                         sonos_device.play()
                         print("✓ Playback resumed")
                     except Exception as e:
@@ -452,7 +435,7 @@ def main():
                     print("[INPUT] NEXT pressed")
                     try:
                         if speech_map.get('NEXT'):
-                            speak_local(speech_map['NEXT'])
+                            speak_sonos(sonos_device,speech_map['NEXT'])
                         sonos_device.next()
                         time.sleep(0.5)
                         track_info = sonos_device.get_current_track_info()
@@ -464,7 +447,7 @@ def main():
                     print("[INPUT] BEGIN pressed")
                     try:
                         if speech_map.get('BEGIN'):
-                            speak_local(speech_map['BEGIN'])
+                            speak_sonos(sonos_device,speech_map['BEGIN'])
                         sonos_device.seek('00:00:00')
                         print("✓ Track restarted from beginning")
                     except Exception as e:

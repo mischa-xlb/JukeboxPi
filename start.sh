@@ -7,4 +7,5 @@ if [ ! -d venv ]; then
     venv/bin/pip install -r requirements.txt
 fi
 
-exec venv/bin/python3 JukeBoxSonosProd.py
+
+exec venv/bin/python3 -u JukeBoxSonosProd.py
