@@ -6,7 +6,9 @@
   "multi_digit_timeout": 2.0,
   "keyboard_device_name": "HID 04f3:0103",
   "keyboard_device_path": null,
+  "music_volume": null,
   "announce_template": "{number}. {title}",
+  "unmapped_response_cooldown": 3,
   "unmapped_responses": [
     "Ouch",
     "Are you sure?",

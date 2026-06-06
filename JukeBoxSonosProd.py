@@ -152,13 +152,13 @@ def announce_selection(device, number, title):
 
         device.play_uri(url)
 
-        # Poll transport state instead of sleeping a fixed duration
-        time.sleep(1)  # give Sonos a moment to start
-        for _ in range(60):
+        # Poll every 0.25s so we start music as soon as TTS finishes
+        time.sleep(0.5)  # give Sonos a moment to begin playing
+        for _ in range(240):  # max 60s
             state = device.get_current_transport_info()['current_transport_state']
             if state != 'PLAYING':
                 break
-            time.sleep(1)
+            time.sleep(0.25)
 
         print("[DEBUG] Announcement complete")
 
@@ -168,8 +168,9 @@ def announce_selection(device, number, title):
         print(f"[WARNING] Announcement failed: {e}")
     finally:
         device.volume = original_volume
+        # Shut down HTTP server in background so it doesn't delay music starting
         if httpd:
-            httpd.shutdown()
+            threading.Thread(target=httpd.shutdown, daemon=True).start()
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
@@ -250,6 +251,9 @@ def play_music(number):
     
     try:
         announce_selection(sonos_device, number, title)
+        if config.get('music_volume') is not None:
+            sonos_device.volume = config['music_volume']
+            print(f"[DEBUG] Music volume set to: {config['music_volume']}")
         print(f"[DEBUG] Attempting to play on Sonos...")
         success = play_spotify_on_sonos(sonos_device, uri, title)
         
@@ -368,6 +372,7 @@ def main():
     # Buffer for multi-digit input
     input_buffer = []
     last_keypress_time = 0
+    last_unmapped_time = 0
 
     key_map = {
         ecodes.KEY_KP0: '0', ecodes.KEY_0: '0',
@@ -411,12 +416,14 @@ def main():
             if key_event.keystate == 1:  # Key down event
                 if event.code not in key_map:
                     responses = config.get('unmapped_responses', [])
-                    if responses:
+                    cooldown = config.get('unmapped_response_cooldown', 3)
+                    if responses and (current_time - last_unmapped_time >= cooldown):
                         msg = random.choice(responses)
                         print(f"[INPUT] Unmapped key (code: {event.code}) → '{msg}'")
                         speak_local(msg)
+                        last_unmapped_time = current_time
                     else:
-                        print(f"[INPUT] Unmapped key (code: {event.code}) → null")
+                        print(f"[INPUT] Unmapped key (code: {event.code}) → null (cooldown)")
                     continue
 
                 key = key_map[event.code]
