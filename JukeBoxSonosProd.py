@@ -33,77 +33,132 @@ config, music_map = load_config()
 # ============================================
 
 def get_sonos_device(ip_address):
-    """Get the Sonos device object"""
+    """Try to connect to a Sonos device at a specific IP address."""
     try:
         print(f"[DEBUG] Connecting to Sonos at {ip_address}...")
         device = soco.SoCo(ip_address)
-        
-        # Test connection by getting speaker info
         info = device.get_speaker_info()
         print(f"[DEBUG] Connected to: {info['zone_name']} ({info['model_name']})")
-        
         return device, info['zone_name']
     except Exception as e:
-        print(f"[DEBUG] Error connecting to Sonos: {e}")
+        print(f"[DEBUG] Error connecting to Sonos at {ip_address}: {e}")
         return None, None
+
+def discover_sonos_device():
+    """Scan the network for any available Sonos device."""
+    try:
+        print("[DEBUG] Scanning network for Sonos devices...")
+        devices = soco.discover(timeout=10)
+        if devices:
+            device = next(iter(devices))
+            info = device.get_speaker_info()
+            print(f"[DEBUG] Discovered: {info['zone_name']} at {device.ip_address}")
+            return device, info['zone_name']
+        else:
+            print("[DEBUG] No Sonos devices found on network scan")
+    except Exception as e:
+        print(f"[DEBUG] Error during network scan: {e}")
+    return None, None
+
+def connect_sonos_with_retry(ip_address, retry_interval=60):
+    """Connect to Sonos, falling back to discovery, retrying every retry_interval seconds."""
+    attempt = 0
+    while True:
+        attempt += 1
+        print(f"\n[Sonos] Connection attempt {attempt}...")
+
+        # Step 1: try configured IP
+        device, room = get_sonos_device(ip_address)
+        if device:
+            return device, room
+
+        # Step 2: scan for any Sonos on the network
+        print(f"[Sonos] {ip_address} unreachable — scanning for other Sonos devices...")
+        device, room = discover_sonos_device()
+        if device:
+            return device, room
+
+        print(f"[Sonos] No Sonos found. Retrying in {retry_interval} seconds...")
+        time.sleep(retry_interval)
 
 def announce_selection(device, number, title):
     """Announce the selection using text-to-speech through Sonos"""
-    print(f"[DEBUG] announce_selection called - Number: {number}, Title: {title}")
-    print(f"[DEBUG] Announcements enabled: {config['announce_selections']}")
-    
-    if config['announce_selections']:
-        message = f"You have selected number {number}. {title}"
-        print(f"[DEBUG] Speaking via Sonos: '{message}'")
-        
-        try:
-            # Save current volume
-            original_volume = device.volume
-            print(f"[DEBUG] Current volume: {original_volume}")
-            
-            # Optionally set a specific volume for announcements
-            if 'announcement_volume' in config and config['announcement_volume']:
-                device.volume = config['announcement_volume']
-                print(f"[DEBUG] Set announcement volume to: {config['announcement_volume']}")
-            
-            # Use Google Translate TTS (works without API keys)
-            from gtts import gTTS
-            import tempfile
-            
-            # Create temporary MP3 file
-            tts = gTTS(text=message, lang='en', slow=False)
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as fp:
-                temp_file = fp.name
-                tts.save(temp_file)
-            
-            print(f"[DEBUG] TTS file created: {temp_file}")
-            
-            # Play the TTS file on Sonos
-            file_uri = f"file://{temp_file}"
-            device.play_uri(file_uri)
-            
-            # Wait for announcement to finish
-            print(f"[DEBUG] Waiting for announcement to complete...")
-            time.sleep(3)  # Adjust based on message length
-            
-            # Restore original volume
-            device.volume = original_volume
-            print(f"[DEBUG] Restored volume to: {original_volume}")
-            
-            # Clean up temp file
-            os.unlink(temp_file)
-            print(f"[DEBUG] Announcement complete")
-            
-        except ImportError:
-            print("[WARNING] gTTS not installed. Install with: pip install gTTS")
-            print("[INFO] Falling back to no announcement")
-        except Exception as e:
-            print(f"[WARNING] Could not play announcement: {e}")
-            # Restore volume if something went wrong
-            try:
-                device.volume = original_volume
-            except:
+    if not config['announce_selections']:
+        return
+
+    message = f"You have selected number {number}. {title}"
+    print(f"[DEBUG] Announcing: '{message}'")
+
+    original_volume = device.volume
+    tmp_path = None
+    httpd = None
+
+    try:
+        from gtts import gTTS
+        import tempfile
+        import threading
+        import http.server
+        import socket
+
+        # Generate the TTS MP3
+        tts = gTTS(text=message, lang='en', slow=False)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+        tts.save(tmp.name)
+        tmp.close()
+        tmp_path = tmp.name
+        print(f"[DEBUG] TTS saved to {tmp_path}")
+
+        # Determine this Pi's IP address so Sonos can reach it
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(('8.8.8.8', 80))
+        local_ip = sock.getsockname()[0]
+        sock.close()
+
+        # Serve the MP3 over HTTP — Sonos cannot access file:// paths
+        serve_dir = os.path.dirname(tmp_path)
+        filename = os.path.basename(tmp_path)
+        port = 8765
+
+        class SilentHandler(http.server.SimpleHTTPRequestHandler):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, directory=serve_dir, **kwargs)
+            def log_message(self, *_):
                 pass
+
+        httpd = http.server.HTTPServer(('', port), SilentHandler)
+        t = threading.Thread(target=httpd.serve_forever)
+        t.daemon = True
+        t.start()
+
+        url = f"http://{local_ip}:{port}/{filename}"
+        print(f"[DEBUG] Serving TTS at {url}")
+
+        if config.get('announcement_volume'):
+            device.volume = config['announcement_volume']
+            print(f"[DEBUG] Announcement volume: {config['announcement_volume']}")
+
+        device.play_uri(url)
+
+        # Poll transport state instead of sleeping a fixed duration
+        time.sleep(1)  # give Sonos a moment to start
+        for _ in range(60):
+            state = device.get_current_transport_info()['current_transport_state']
+            if state != 'PLAYING':
+                break
+            time.sleep(1)
+
+        print("[DEBUG] Announcement complete")
+
+    except ImportError:
+        print("[WARNING] gTTS not installed: pip install gTTS")
+    except Exception as e:
+        print(f"[WARNING] Announcement failed: {e}")
+    finally:
+        device.volume = original_volume
+        if httpd:
+            httpd.shutdown()
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 def play_spotify_on_sonos(device, spotify_uri, title):
     """Play a Spotify URI on Sonos using SoCo sharelink method"""
@@ -280,20 +335,9 @@ def main():
     print("SONOS JUKEBOX (SoCo Library)")
     print("=" * 60)
     
-    # Connect to Sonos
+    # Connect to Sonos (retries every 60s until successful)
     print(f"\n[1/2] Connecting to Sonos at {config['sonos_ip_address']}...")
-    sonos_device, sonos_room_name = get_sonos_device(config['sonos_ip_address'])
-    
-    if not sonos_device:
-        print(f"✗ Could not connect to Sonos at {config['sonos_ip_address']}")
-        print("\nPlease check:")
-        print("  1. The IP address is correct in config_sonos.json")
-        print("  2. The Sonos is powered on and connected to your network")
-        print("  3. You can ping the Sonos IP address")
-        print("\nTo find your Sonos IP:")
-        print("  Sonos S1 app → Settings → System → About My System")
-        return
-    
+    sonos_device, sonos_room_name = connect_sonos_with_retry(config['sonos_ip_address'])
     print(f"✓ Connected to Sonos: {sonos_room_name}")
     
     # Find the numeric keypad
