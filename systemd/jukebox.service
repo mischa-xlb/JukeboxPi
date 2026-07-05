@@ -1,0 +1,25 @@
+[Unit]
+Description=JukeboxPi - Sonos keypad jukebox
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Change User to whichever account has permission to read /dev/input/eventX
+# (must be root, or a member of the "input" group) and can reach the Sonos
+# speaker on the network.
+User=pi
+WorkingDirectory=/home/pi/git/JukeboxPi
+ExecStart=/home/pi/git/JukeboxPi/start.sh
+
+# Auto-restart on crash, but don't fight a deliberate `systemctl stop`.
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=0
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jukebox
+
+[Install]
+WantedBy=multi-user.target

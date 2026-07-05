@@ -4,9 +4,51 @@ import time
 import json
 import os
 import random
+import sys
+import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import soco
 from soco.music_services import MusicService
+
+# ============================================
+# LOGGING SETUP
+# Mirrors every print() (stdout/stderr) into a rotating log file so the
+# web viewer (web_manager.py's /logs page) has something to tail, in
+# addition to whatever systemd/journald captures from the console.
+# ============================================
+
+LOG_DIR = Path(__file__).parent / 'logs'
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / 'jukebox.log'
+
+_file_logger = logging.getLogger('jukebox.output')
+_file_logger.setLevel(logging.DEBUG)
+_file_handler = RotatingFileHandler(LOG_FILE, maxBytes=2_000_000, backupCount=5)
+_file_handler.setFormatter(logging.Formatter('%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+_file_logger.addHandler(_file_handler)
+_file_logger.propagate = False
+
+class _StreamTee:
+    """Writes to the original stream and mirrors each line into the file logger."""
+    def __init__(self, stream, level):
+        self.stream = stream
+        self.level = level
+
+    def write(self, buf):
+        self.stream.write(buf)
+        for line in buf.splitlines():
+            if line.strip():
+                _file_logger.log(self.level, line)
+
+    def flush(self):
+        self.stream.flush()
+
+    def isatty(self):
+        return self.stream.isatty()
+
+sys.stdout = _StreamTee(sys.stdout, logging.INFO)
+sys.stderr = _StreamTee(sys.stderr, logging.ERROR)
 
 # ============================================
 # LOAD CONFIGURATION FILES

@@ -1,0 +1,21 @@
+[Unit]
+Description=JukeboxPi Web Manager (track editor + debug log viewer)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/git/JukeboxPi
+ExecStart=/home/pi/git/JukeboxPi/start-web.sh
+
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=0
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jukebox-web
+
+[Install]
+WantedBy=multi-user.target

@@ -13,6 +13,7 @@ app = Flask(__name__)
 BASE_DIR = Path(__file__).parent
 MAPPINGS_FILE = BASE_DIR / 'music_mappings.json'
 TRACKART_DIR = BASE_DIR / 'trackart'
+LOG_FILE = BASE_DIR / 'logs' / 'jukebox.log'
 
 # ---------------------------------------------------------------------------
 
@@ -180,7 +181,10 @@ HTML = """<!DOCTYPE html>
 
 <header>
   <h1>JukeboxPi Manager</h1>
-  <button class="btn btn-green" onclick="openModal()">+ Add Track</button>
+  <div style="display:flex; gap:10px">
+    <a class="btn btn-gray" style="text-decoration:none" href="/logs">Debug Log</a>
+    <button class="btn btn-green" onclick="openModal()">+ Add Track</button>
+  </div>
 </header>
 
 <div class="grid" id="track-grid"></div>
@@ -342,6 +346,104 @@ load();
 
 # ---------------------------------------------------------------------------
 
+LOGS_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JukeboxPi Debug Log</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f0f0; }
+  header {
+    background: #1a1a1a;
+    color: white;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 { font-size: 1.3rem; letter-spacing: -0.3px; }
+  .btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-block;
+  }
+  .btn-gray { background: #aaa; color: white; }
+  .btn-blue { background: #4A90D9; color: white; }
+  .btn:hover { opacity: 0.85; }
+  .status { font-size: 0.8rem; color: #999; margin-right: 12px; }
+  #log {
+    background: #111;
+    color: #ddd;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    padding: 20px 24px;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    min-height: calc(100vh - 64px);
+  }
+  .controls { display: flex; align-items: center; gap: 10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>JukeboxPi Debug Log</h1>
+  <div class="controls">
+    <span class="status" id="status">loading...</span>
+    <button class="btn btn-blue" id="pause-btn" onclick="togglePause()">Pause</button>
+    <a class="btn btn-gray" href="/">Back to Manager</a>
+  </div>
+</header>
+
+<pre id="log">Loading log...</pre>
+
+<script>
+let paused = false;
+let timer = null;
+
+function isNearBottom() {
+  return (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 80);
+}
+
+async function refresh() {
+  if (paused) return;
+  const stick = isNearBottom();
+  try {
+    const res = await fetch('/api/logs');
+    const text = await res.text();
+    document.getElementById('log').textContent = text || '(log is empty)';
+    document.getElementById('status').textContent = 'updated ' + new Date().toLocaleTimeString();
+    if (stick) window.scrollTo(0, document.body.scrollHeight);
+  } catch (e) {
+    document.getElementById('status').textContent = 'error fetching log: ' + e;
+  }
+}
+
+function togglePause() {
+  paused = !paused;
+  document.getElementById('pause-btn').textContent = paused ? 'Resume' : 'Pause';
+}
+
+refresh();
+timer = setInterval(refresh, 2000);
+</script>
+</body>
+</html>"""
+
+# ---------------------------------------------------------------------------
+
 def load_mappings():
     with open(MAPPINGS_FILE) as f:
         return json.load(f)
@@ -382,6 +484,26 @@ def upload():
 @app.route('/trackart/<path:filename>')
 def trackart(filename):
     return send_from_directory(str(TRACKART_DIR), filename)
+
+@app.route('/logs')
+def logs_page():
+    return render_template_string(LOGS_HTML)
+
+@app.route('/api/logs')
+def api_logs():
+    """Return the tail of the jukebox debug log as plain text for the /logs page to poll."""
+    if not LOG_FILE.exists():
+        text = 'No log file yet — has the jukebox service started?'
+    else:
+        max_bytes = 65536
+        with open(LOG_FILE, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - max_bytes))
+            data = f.read().decode('utf-8', errors='replace')
+        lines = data.splitlines()
+        text = '\n'.join(lines[-500:])
+    return text, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
