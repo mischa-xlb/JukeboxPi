@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """JukeboxPi web manager — add, edit and delete tracks via a browser.
 Run:  python3 web_manager.py
-Then open:  http://<pi-ip>:5000"""
+Then open:  http://<pi-ip>:5001"""
 
 import json
 import os
@@ -506,4 +506,4 @@ def api_logs():
     return text, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    app.run(host='0.0.0.0', port=5001, debug=False)
