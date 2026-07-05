@@ -4,12 +4,14 @@ import time
 import json
 import os
 import random
+import signal
 import sys
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import soco
 from soco.music_services import MusicService
+from spotify_uri import uri_to_sharelink
 
 # ============================================
 # LOGGING SETUP
@@ -70,6 +72,55 @@ def load_config():
 
 # Load configs
 config, music_map = load_config()
+
+# Populated by build_key_maps() once evdev/ecodes-derived keys are available.
+key_map = {}
+speech_map = {}
+
+def build_key_maps():
+    """(Re)build the evdev keycode -> action map and the action -> TTS phrase map from config."""
+    global key_map, speech_map
+
+    new_key_map = {
+        ecodes.KEY_KP0: '0', ecodes.KEY_0: '0',
+        ecodes.KEY_KP1: '1', ecodes.KEY_1: '1',
+        ecodes.KEY_KP2: '2', ecodes.KEY_2: '2',
+        ecodes.KEY_KP3: '3', ecodes.KEY_3: '3',
+        ecodes.KEY_KP4: '4', ecodes.KEY_4: '4',
+        ecodes.KEY_KP5: '5', ecodes.KEY_5: '5',
+        ecodes.KEY_KP6: '6', ecodes.KEY_6: '6',
+        ecodes.KEY_KP7: '7', ecodes.KEY_7: '7',
+        ecodes.KEY_KP8: '8', ecodes.KEY_8: '8',
+        ecodes.KEY_KP9: '9', ecodes.KEY_9: '9',
+        ecodes.KEY_KPENTER: 'ENTER', ecodes.KEY_ENTER: 'ENTER',
+    }
+    new_speech_map = {}
+    for key_name, binding in config.get('key_bindings', {}).items():
+        code = getattr(ecodes, key_name, None)
+        if code is None:
+            print(f"[WARNING] Unknown key name in config key_bindings: '{key_name}'")
+            continue
+        action = binding['action']
+        new_key_map[code] = action
+        if binding.get('speech'):
+            new_speech_map[action] = binding['speech']
+
+    key_map = new_key_map
+    speech_map = new_speech_map
+
+def reload_config(signum=None, frame=None):
+    """SIGHUP handler: reload config_sonos.json and music_mappings.json without restarting.
+    Trigger with: systemctl kill -s HUP jukebox   (or: kill -HUP <pid>)"""
+    global config, music_map
+    try:
+        config, music_map = load_config()
+        build_key_maps()
+        print("\n[RELOAD] Configuration and music mappings reloaded from disk.")
+    except Exception as e:
+        print(f"[RELOAD] Failed to reload config: {e}")
+
+build_key_maps()
+signal.signal(signal.SIGHUP, reload_config)
 
 # ============================================
 # SONOS CONTROL FUNCTIONS
@@ -195,28 +246,13 @@ def play_spotify_on_sonos(device, spotify_uri, title):
     
     try:
         print(f"[DEBUG] Spotify URI: {spotify_uri}")
-        
-        # Convert Spotify URI to HTTP sharelink format
-        # spotify:album:ID -> https://open.spotify.com/album/ID
-        # spotify:playlist:ID -> https://open.spotify.com/playlist/ID
-        # spotify:track:ID -> https://open.spotify.com/track/ID
-        
-        if spotify_uri.startswith('spotify:album:'):
-            album_id = spotify_uri.split(':')[-1]
-            sharelink = f"https://open.spotify.com/album/{album_id}"
-            print(f"[DEBUG] Converted to sharelink: {sharelink}")
-        elif spotify_uri.startswith('spotify:playlist:'):
-            playlist_id = spotify_uri.split(':')[-1]
-            sharelink = f"https://open.spotify.com/playlist/{playlist_id}"
-            print(f"[DEBUG] Converted to sharelink: {sharelink}")
-        elif spotify_uri.startswith('spotify:track:'):
-            track_id = spotify_uri.split(':')[-1]
-            sharelink = f"https://open.spotify.com/track/{track_id}"
-            print(f"[DEBUG] Converted to sharelink: {sharelink}")
-        else:
+
+        sharelink = uri_to_sharelink(spotify_uri)
+        if not sharelink:
             print(f"[DEBUG] Unknown Spotify URI format: {spotify_uri}")
             return False
-        
+        print(f"[DEBUG] Converted to sharelink: {sharelink}")
+
         # Use SoCo's sharelink functionality
         print(f"[DEBUG] Adding sharelink to queue...")
         from soco.plugins.sharelink import ShareLinkPlugin
@@ -398,31 +434,6 @@ def main():
     input_buffer = []
     last_keypress_time = 0
     last_unmapped_time = 0
-
-    key_map = {
-        ecodes.KEY_KP0: '0', ecodes.KEY_0: '0',
-        ecodes.KEY_KP1: '1', ecodes.KEY_1: '1',
-        ecodes.KEY_KP2: '2', ecodes.KEY_2: '2',
-        ecodes.KEY_KP3: '3', ecodes.KEY_3: '3',
-        ecodes.KEY_KP4: '4', ecodes.KEY_4: '4',
-        ecodes.KEY_KP5: '5', ecodes.KEY_5: '5',
-        ecodes.KEY_KP6: '6', ecodes.KEY_6: '6',
-        ecodes.KEY_KP7: '7', ecodes.KEY_7: '7',
-        ecodes.KEY_KP8: '8', ecodes.KEY_8: '8',
-        ecodes.KEY_KP9: '9', ecodes.KEY_9: '9',
-        ecodes.KEY_KPENTER: 'ENTER', ecodes.KEY_ENTER: 'ENTER',
-    }
-
-    speech_map = {}
-    for key_name, binding in config.get('key_bindings', {}).items():
-        code = getattr(ecodes, key_name, None)
-        if code is None:
-            print(f"[WARNING] Unknown key name in config key_bindings: '{key_name}'")
-            continue
-        action = binding['action']
-        key_map[code] = action
-        if binding.get('speech'):
-            speech_map[action] = binding['speech']
 
     # Listen for keypad input
     for event in keypad.read_loop():

@@ -5,15 +5,21 @@ Then open:  http://<pi-ip>:5001"""
 
 import json
 import os
+import urllib.error
+import urllib.request
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, render_template_string
 from werkzeug.utils import secure_filename
+import soco
+from soco.plugins.sharelink import ShareLinkPlugin
+from spotify_uri import uri_to_sharelink
 
 app = Flask(__name__)
 BASE_DIR = Path(__file__).parent
 MAPPINGS_FILE = BASE_DIR / 'music_mappings.json'
 TRACKART_DIR = BASE_DIR / 'trackart'
 LOG_FILE = BASE_DIR / 'logs' / 'jukebox.log'
+SONOS_CONFIG_FILE = BASE_DIR / 'config_sonos.json'
 
 # ---------------------------------------------------------------------------
 
@@ -111,7 +117,7 @@ HTML = """<!DOCTYPE html>
 
   .title { font-size: 0.85rem; color: #333; line-height: 1.4; }
 
-  .card-actions { display: flex; gap: 8px; }
+  .card-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
 
   /* Modal */
   .overlay {
@@ -247,8 +253,9 @@ function render() {
       ${img}
       <div class="title">${t.title}</div>
       <div class="card-actions">
-        <button class="btn btn-blue"  onclick="openModal('${num}')" style="font-size:0.8rem;padding:6px 12px">Edit</button>
-        <button class="btn btn-red"   onclick="del('${num}')"       style="font-size:0.8rem;padding:6px 12px">Delete</button>
+        <button class="btn btn-green" onclick="playTrack('${num}')" style="font-size:0.78rem;padding:5px 10px">▶ Play</button>
+        <button class="btn btn-blue"  onclick="openModal('${num}')" style="font-size:0.78rem;padding:5px 10px">Edit</button>
+        <button class="btn btn-red"   onclick="del('${num}')"       style="font-size:0.78rem;padding:5px 10px">Delete</button>
       </div>
     </div>`;
   }).join('');
@@ -288,6 +295,17 @@ function onFileChosen(input) {
   document.getElementById('f-filename').value = file.name;
 }
 
+async function playTrack(number) {
+  toast(`Sending track ${number} to Sonos...`);
+  try {
+    const res  = await fetch(`/api/tracks/${number}/play`, { method: 'POST' });
+    const data = await res.json();
+    toast(data.ok ? `Playing on ${data.zone}` : `Play failed: ${data.error}`);
+  } catch (e) {
+    toast(`Play failed: ${e}`);
+  }
+}
+
 async function saveTrack() {
   const number   = (editingNumber || document.getElementById('f-number').value).toString().trim();
   const title    = document.getElementById('f-title').value.trim();
@@ -296,6 +314,20 @@ async function saveTrack() {
 
   if (!number || !title || !uri) {
     toast('Number, title and URI are all required'); return;
+  }
+
+  const check = await fetch('/api/validate_uri', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uri })
+  }).then(r => r.json());
+
+  if (!check.valid) {
+    toast(`Invalid URI: ${check.message}`);
+    return;
+  }
+  if (!check.reachable && !confirm(`${check.message}\n\nSave anyway?`)) {
+    return;
   }
 
   const fileInput = document.getElementById('f-file');
@@ -452,6 +484,21 @@ def save_mappings(data):
     with open(MAPPINGS_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
+def load_sonos_config():
+    with open(SONOS_CONFIG_FILE) as f:
+        return json.load(f)
+
+def check_uri_reachable(sharelink):
+    """Best-effort check that the Spotify sharelink page actually exists."""
+    try:
+        req = urllib.request.Request(sharelink, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            return 200 <= resp.status < 400
+    except urllib.error.HTTPError as e:
+        return 200 <= e.code < 400
+    except Exception:
+        return False
+
 @app.route('/')
 def index():
     return render_template_string(HTML)
@@ -473,6 +520,45 @@ def delete_track(number):
     data.pop(number, None)
     save_mappings(data)
     return jsonify({'ok': True})
+
+@app.route('/api/validate_uri', methods=['POST'])
+def validate_uri():
+    uri = (request.json or {}).get('uri', '').strip()
+    sharelink = uri_to_sharelink(uri)
+    if not sharelink:
+        return jsonify({
+            'valid': False, 'reachable': False,
+            'message': 'Not a recognised spotify:album:/playlist:/track: URI'
+        })
+    reachable = check_uri_reachable(sharelink)
+    return jsonify({
+        'valid': True,
+        'reachable': reachable,
+        'sharelink': sharelink,
+        'message': 'Looks good' if reachable else f'URI format OK, but {sharelink} could not be reached'
+    })
+
+@app.route('/api/tracks/<number>/play', methods=['POST'])
+def play_track(number):
+    data = load_mappings()
+    track = data.get(number)
+    if not track:
+        return jsonify({'ok': False, 'error': 'Track not found'}), 404
+
+    sharelink = uri_to_sharelink(track['uri'])
+    if not sharelink:
+        return jsonify({'ok': False, 'error': f"Unrecognised URI format: {track['uri']}"}), 400
+
+    try:
+        sonos_config = load_sonos_config()
+        device = soco.SoCo(sonos_config['sonos_ip_address'])
+        plugin = ShareLinkPlugin(device)
+        device.clear_queue()
+        position = plugin.add_share_link_to_queue(sharelink)
+        device.play_from_queue(position - 1)
+        return jsonify({'ok': True, 'zone': device.get_speaker_info()['zone_name']})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 @app.route('/api/upload', methods=['POST'])
 def upload():
