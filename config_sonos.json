@@ -2,7 +2,7 @@
   "sonos_ip_address": "192.168.1.140",
   "sonos_room_name": "Den",
   "announce_selections": true,
-  "announcement_volume": 30,
+  "announcement_volume": 40,
   "multi_digit_timeout": 2.0,
   "keyboard_device_name": "HID 04f3:0103",
   "keyboard_device_path": null,
