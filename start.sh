@@ -1,8 +1,9 @@
 #!/bin/bash
 cd /home/pi/git/JukeboxPi
 
-if [ ! -d venv ]; then
-    echo "Creating virtual environment..."
+if [ ! -x venv/bin/pip ]; then
+    echo "(Re)creating virtual environment..."
+    rm -rf venv
     python3 -m venv venv
 fi
 venv/bin/pip install -q -r requirements.txt
